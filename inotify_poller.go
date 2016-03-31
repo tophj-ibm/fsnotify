@@ -7,6 +7,7 @@
 package fsnotify
 
 import (
+	"fmt"
 	"errors"
 	"syscall"
 )
@@ -82,7 +83,10 @@ func (poller *fdPoller) wait() (bool, error) {
 	// I decided to catch both by making the buffer one larger than the maximum.
 	events := make([]syscall.EpollEvent, 7)
 	for {
+		fmt.Println("lenght of events is ", len(events))
 		n, errno := syscall.EpollWait(poller.epfd, events, -1)
+		fmt.Println("n returned by epollwait is ", n)
+		fmt.Println("errno returned by epoll wait is ", errno)
 		if n == -1 {
 			if errno == syscall.EINTR {
 				continue
@@ -98,39 +102,49 @@ func (poller *fdPoller) wait() (bool, error) {
 			return false, errors.New("epoll_wait returned more events than I know what to do with")
 		}
 		ready := events[:n]
+		fmt.Println("ready is ", ready)
 		epollhup := false
 		epollerr := false
 		epollin := false
 		for _, event := range ready {
 			if event.Fd == int32(poller.fd) {
+				fmt.Println("event fd is equal to the poller fd")
 				if event.Events&syscall.EPOLLHUP != 0 {
+					fmt.Println("this should not happen, thanks")
 					// This should not happen, but if it does, treat it as a wakeup.
 					epollhup = true
 				}
 				if event.Events&syscall.EPOLLERR != 0 {
+					fmt.Println("error waiting on fd")
 					// If an error is waiting on the file descriptor, we should pretend
 					// something is ready to read, and let syscall.Read pick up the error.
 					epollerr = true
 				}
 				if event.Events&syscall.EPOLLIN != 0 {
+					fmt.Println("there is data to read, yay!")
 					// There is data to read.
 					epollin = true
 				}
 			}
 			if event.Fd == int32(poller.pipe[0]) {
+				fmt.Println("event fd is equal to poller.pipe[0], not sure what this means yet")
 				if event.Events&syscall.EPOLLHUP != 0 {
+					fmt.Println("write pipe descriptor was closed, we are closing down the watcher")
 					// Write pipe descriptor was closed, by us. This means we're closing down the
 					// watcher, and we should wake up.
 				}
 				if event.Events&syscall.EPOLLERR != 0 {
+					fmt.Println("this is an absolute mystery")
 					// If an error is waiting on the pipe file descriptor.
 					// This is an absolute mystery, and should never ever happen.
 					return false, errors.New("Error on the pipe descriptor.")
 				}
 				if event.Events&syscall.EPOLLIN != 0 {
+					fmt.Println("this is a regular wakeup")
 					// This is a regular wakeup, so we have to clear the buffer.
 					err := poller.clearWake()
 					if err != nil {
+						fmt.Println("uh oh, err is ", err)
 						return false, err
 					}
 				}
@@ -138,6 +152,7 @@ func (poller *fdPoller) wait() (bool, error) {
 		}
 
 		if epollhup || epollerr || epollin {
+			fmt.Println("this is returning true")
 			return true, nil
 		}
 		return false, nil
